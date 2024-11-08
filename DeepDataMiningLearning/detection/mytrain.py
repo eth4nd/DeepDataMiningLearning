@@ -227,12 +227,9 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
             else:
                 loss_dict = output
 
-            # Debugging: Print the loss dictionary
-            print(f"Loss dictionary keys: {loss_dict.keys()}")
-            print(f"Loss dictionary values: {loss_dict}")
-
-            # Calculate total loss
-            losses = sum(loss for loss in loss_dict.values())
+            # Ensure loss_dict values are reduced to scalars
+            loss_dict = {k: v.mean() for k, v in loss_dict.items()}  # Reduce each loss tensor to scalar
+            losses = sum(loss for loss in loss_dict.values())  # Sum all scalar losses
 
         # Reduce and accumulate loss for logging
         loss_dict_reduced = utils.reduce_dict(loss_dict)
