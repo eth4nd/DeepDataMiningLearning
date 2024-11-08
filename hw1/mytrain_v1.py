@@ -14,7 +14,7 @@ from DeepDataMiningLearning.detection.dataset import get_dataset
 from DeepDataMiningLearning.detection.myevaluator import simplemodelevaluate, modelevaluate
 
 # Import your custom backbone
-from DeepDataMiningLearning.hw1.backbone import get_efficientnet_backbone, CustomBackboneWithFPN
+from hw1.backbone import get_efficientnet_backbone, CustomBackboneWithFPN
 
 try:
     from torchinfo import summary
@@ -61,7 +61,6 @@ def get_args_parser(add_help=True):
     parser.add_argument("--backend", default="PIL", type=str.lower, help="PIL or tensor")
     parser.add_argument("--use-v2", action="store_true", help="use V2 transforms")
     parser.add_argument("--expname", default="experiment", help="experiment name")
-    parser.add_argument("--max-batches", default=None, type=int, help="maximum number of batches to process for testing")
 
     return parser
 
@@ -84,21 +83,8 @@ def main(args):
         torch.use_deterministic_algorithms(True)
 
     print("Loading data")
-
-    if args.dataset.lower() == "kitti":
-        # Use KITTI-specific dataset and transformations
-        from DeepDataMiningLearning.detection.dataset_kitti import KittiDataset, get_transformsimple
-
-        transform_train = get_transformsimple(is_train=True)
-        transform_val = get_transformsimple(is_train=False)
-        dataset = KittiDataset(root=args.data_path, train=True, split='train', transform=transform_train)
-        dataset_test = KittiDataset(root=args.data_path, train=False, split='val', transform=transform_val)
-        num_classes = dataset.numclass
-    else:
-        # Use get_dataset for other datasets
-        dataset, num_classes = get_dataset(args.dataset, is_train=True, is_val=False, args=args)
-        dataset_test, _ = get_dataset(args.dataset, is_train=False, is_val=True, args=args)
-
+    dataset, num_classes = get_dataset(args.dataset, is_train=True, is_val=False, args=args)
+    dataset_test, _ = get_dataset(args.dataset, is_train=False, is_val=True, args=args)
     print("train set len:", len(dataset))
     print("test set len:", len(dataset_test))
 
@@ -157,7 +143,7 @@ def main(args):
     for epoch in range(args.start_epoch, args.epochs + 1):
         if args.distributed:
             train_sampler.set_epoch(epoch)
-        train_one_epoch(model, optimizer, data_loader, device, epoch, args.print_freq, scaler, max_batches=args.max_batches)
+        train_one_epoch(model, optimizer, data_loader, device, epoch, args.print_freq, scaler)
         lr_scheduler.step()
         if (epoch + 1) % args.saveeveryepoch == 0 or epoch == args.epochs:
             checkpoint = {
@@ -176,7 +162,7 @@ def main(args):
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print(f"Training time {total_time_str}")
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, scaler=None, max_batches=None):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, scaler=None):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
@@ -186,53 +172,21 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
     if epoch == 0:
         warmup_factor = 1.0 / 1000
         warmup_iters = min(1000, len(data_loader) - 1)
+
         lr_scheduler = torch.optim.lr_scheduler.LinearLR(
             optimizer, start_factor=warmup_factor, total_iters=warmup_iters
         )
 
-    batch_count = 0  # Counter to track the number of processed batches
-
-    for batch in metric_logger.log_every(data_loader, print_freq, header):
-        if max_batches is not None and batch_count >= max_batches:
-            break  # Stop processing more batches if the limit is reached
-
-        # Unpack images and targets from the batch
-        images, targets = batch
-
-        # Optional: [DEBUG] Check image and target shapes in the batch
-        print(f"[DEBUG] Batch image shapes: {[img.shape for img in images]}")
-        for target in targets:
-            print(f"[DEBUG] Target boxes shape: {target['boxes'].shape}")
-
-        if isinstance(images, tuple):
-            images = list(images)  # Ensure images is a list of tensors
-
-        # Debugging: Log image sizes to ensure consistency
-        image_sizes = [image.size() for image in images]
-        print(f"Image sizes in this batch: {image_sizes}")
-        consistent_size = all(size == image_sizes[0] for size in image_sizes)
-        if not consistent_size:
-            print(f"Warning: Inconsistent image sizes detected in batch {batch_count + 1}: {image_sizes}")
-
-        images = [image.to(device) for image in images]
+    for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+        images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in t.items()} for t in targets]
-
-        with torch.amp.autocast(device_type=device.type, enabled=scaler is not None):
-            # Forward pass and handle output format
-            output = model(images, targets) if targets is not None else model(images)
-            
-            # Handle tuple output from the model
-            if isinstance(output, tuple):
-                loss_dict = output[0]  # Assuming the first element is the loss dictionary
-            else:
-                loss_dict = output
-
-            # Calculate total loss
+        with torch.amp.autocast(enabled=scaler is not None):
+            loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
 
-        # Reduce and accumulate loss for logging
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         losses_reduced = sum(loss for loss in loss_dict_reduced.values())
+
         loss_value = losses_reduced.item()
 
         if not math.isfinite(loss_value):
@@ -254,8 +208,6 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
 
         metric_logger.update(loss=losses_reduced, **loss_dict_reduced)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-
-        batch_count += 1  # Increment the batch counter
 
     return metric_logger
 

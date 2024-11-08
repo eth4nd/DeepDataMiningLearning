@@ -5,7 +5,36 @@ import torchvision
 from torch import nn, Tensor
 from torchvision import ops
 from torchvision.transforms import functional as F, InterpolationMode, transforms as T
+from PIL import Image
 
+class Resize(nn.Module):
+    def __init__(self, size: Tuple[int, int], interpolation=InterpolationMode.BILINEAR):
+        super().__init__()
+        self.size = size
+        self.interpolation = interpolation
+
+    def forward(self, image, target: Optional[Dict[str, Tensor]] = None) -> Tuple[torch.Tensor, Optional[Dict[str, Tensor]]]:
+        # Debug: Log the size before resizing
+        if isinstance(image, Image.Image):
+            print(f"[DEBUG] Original Image Size: {image.size}")
+        elif isinstance(image, torch.Tensor):
+            print(f"[DEBUG] Original Tensor Shape: {image.shape}")
+        
+        # Ensure the input is a PIL image before resizing
+        if isinstance(image, torch.Tensor):
+            image = F.to_pil_image(image)
+
+        # Resize the image while maintaining aspect ratio
+        image = F.resize(image, self.size, interpolation=self.interpolation)
+
+        # Convert resized image to tensor for padding
+        image = F.to_tensor(image)
+
+        # Debug: Log the size after resizing
+        print(f"[DEBUG] Resized Image Tensor Shape: {image.shape}")
+
+        # Target handling remains unchanged
+        return image, target
 
 def _flip_coco_person_keypoints(kps, width):
     flip_inds = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
@@ -23,19 +52,20 @@ class Compose:
 
     def __call__(self, image, target):
         for t in self.transforms:
+            print(f"[DEBUG] Applying transform: {t}")
             image, target = t(image, target)
+            print(f"[DEBUG] After {t}, image: {type(image)}, target: {type(target)}")
         return image, target
 
-
 class RandomHorizontalFlip(T.RandomHorizontalFlip):
-    def forward(
-        self, image: Tensor, target: Optional[Dict[str, Tensor]] = None
-    ) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
+    def forward(self, image: Tensor, target: Optional[Dict[str, Tensor]] = None) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
         if torch.rand(1) < self.p:
+            print("[DEBUG] Applying Horizontal Flip")  # Debugging
             image = F.hflip(image)
             if target is not None:
                 _, _, width = F.get_dimensions(image)
                 target["boxes"][:, [0, 2]] = width - target["boxes"][:, [2, 0]]
+                print(f"[DEBUG] Updated Bounding Boxes: {target['boxes']}")
                 if "masks" in target:
                     target["masks"] = target["masks"].flip(-1)
                 if "keypoints" in target:
@@ -44,14 +74,14 @@ class RandomHorizontalFlip(T.RandomHorizontalFlip):
                     target["keypoints"] = keypoints
         return image, target
 
-
 class PILToTensor(nn.Module):
     def forward(
-        self, image: Tensor, target: Optional[Dict[str, Tensor]] = None
-    ) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
-        image = F.pil_to_tensor(image)
+        self, image: Union[Image.Image, torch.Tensor], target: Optional[Dict[str, Tensor]] = None
+    ) -> Tuple[torch.Tensor, Optional[Dict[str, Tensor]]]:
+        # Only apply transformation if image is a PIL image
+        if isinstance(image, Image.Image):
+            image = F.pil_to_tensor(image)
         return image, target
-
 
 class ToDtype(nn.Module):
     def __init__(self, dtype: torch.dtype, scale: bool = False) -> None:

@@ -8,6 +8,7 @@ from typing import Any, Callable, List, Optional, Tuple
 from PIL import Image
 import csv
 from DeepDataMiningLearning.detection.dataset_kitti import KittiDataset
+from DeepDataMiningLearning.detection.dataset_kitti import get_transformsimple 
 from DeepDataMiningLearning.detection.dataset_waymococo import WaymoCOCODataset
 from collections import defaultdict
 
@@ -160,9 +161,26 @@ def get_dataset(datasetname, is_train, is_val, args):
     return ds, num_classes
 
 def get_transform(is_train, args):
+    """
+    Returns the appropriate transformation pipeline for the specified dataset.
+    
+    Args:
+        is_train (bool): Whether to apply training transformations.
+        args (Namespace): Command-line arguments containing dataset-specific configurations.
+    
+    Returns:
+        Callable: Transformation function to apply to the dataset.
+    """
+    # Use get_transformsimple for KITTI dataset
+    if args.dataset.lower() == "kitti":
+        return get_transformsimple(is_train)
+    
+    # For other datasets, retain the existing behavior
     if is_train:
         return DetectionPresetTrain(
-            data_augmentation=args.data_augmentation, backend=args.backend, use_v2=args.use_v2
+            data_augmentation=args.data_augmentation, 
+            backend=args.backend, 
+            use_v2=args.use_v2
         )
     elif args.weights and args.test_only:
         weights = torchvision.models.get_weight(args.weights)
@@ -170,6 +188,7 @@ def get_transform(is_train, args):
         return lambda img, target: (trans(img), target)
     else:
         return DetectionPresetEval(backend=args.backend, use_v2=args.use_v2)
+
     
 def get_cocodataset(is_train, is_val, args):
     image_set = "train" if is_train else "val"
