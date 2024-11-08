@@ -139,11 +139,9 @@ class KittiDataset(torch.utils.data.Dataset):
                         "rotation_y": float(line[14]),
                     }
                 )
-        print(f"[DEBUG] get_label for {idx} returns {len(target)} objects.")
         return target
 
     def convert_target(self, image_id, target):
-        print(f"[DEBUG] Converting target for image_id {image_id}: {target}")
         num_objs = len(target)
         boxes = []
         labels = []
@@ -226,20 +224,7 @@ class KittiDataset(torch.utils.data.Dataset):
 
         # Apply transformations, if specified
         if self.transform:
-            # Debug: Print the size of the image before and after transformation
-            if isinstance(image, Image.Image):
-                print(f"[DEBUG] Original image size (PIL): {image.size}")
-            elif isinstance(image, torch.Tensor):
-                print(f"[DEBUG] Original image shape (Tensor): {image.shape}")
-
             image, target = self.transform(image, target)
-
-            # Debug: Print the size of the transformed image
-            if isinstance(image, Image.Image):
-                print(f"[DEBUG] Transformed image size (PIL): {image.size}")
-            elif isinstance(image, torch.Tensor):
-                print(f"[DEBUG] Transformed image shape (Tensor): {image.shape}")
-
         # Return the image and target
         return image, target
 

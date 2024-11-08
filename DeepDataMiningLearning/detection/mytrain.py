@@ -199,11 +199,6 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
         # Unpack images and targets from the batch
         images, targets = batch
 
-        # Optional: [DEBUG] Check image and target shapes in the batch
-        print(f"[DEBUG] Batch image shapes: {[img.shape for img in images]}")
-        for target in targets:
-            print(f"[DEBUG] Target boxes shape: {target['boxes'].shape}")
-
         if isinstance(images, tuple):
             images = list(images)  # Ensure images is a list of tensors
 

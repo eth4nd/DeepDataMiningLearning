@@ -13,13 +13,7 @@ class Resize(nn.Module):
         self.size = size
         self.interpolation = interpolation
 
-    def forward(self, image, target: Optional[Dict[str, Tensor]] = None) -> Tuple[torch.Tensor, Optional[Dict[str, Tensor]]]:
-        # Debug: Log the size before resizing
-        if isinstance(image, Image.Image):
-            print(f"[DEBUG] Original Image Size: {image.size}")
-        elif isinstance(image, torch.Tensor):
-            print(f"[DEBUG] Original Tensor Shape: {image.shape}")
-        
+    def forward(self, image, target: Optional[Dict[str, Tensor]] = None) -> Tuple[torch.Tensor, Optional[Dict[str, Tensor]]]:        
         # Ensure the input is a PIL image before resizing
         if isinstance(image, torch.Tensor):
             image = F.to_pil_image(image)
@@ -29,9 +23,6 @@ class Resize(nn.Module):
 
         # Convert resized image to tensor for padding
         image = F.to_tensor(image)
-
-        # Debug: Log the size after resizing
-        print(f"[DEBUG] Resized Image Tensor Shape: {image.shape}")
 
         # Target handling remains unchanged
         return image, target
@@ -52,20 +43,16 @@ class Compose:
 
     def __call__(self, image, target):
         for t in self.transforms:
-            print(f"[DEBUG] Applying transform: {t}")
             image, target = t(image, target)
-            print(f"[DEBUG] After {t}, image: {type(image)}, target: {type(target)}")
         return image, target
 
 class RandomHorizontalFlip(T.RandomHorizontalFlip):
     def forward(self, image: Tensor, target: Optional[Dict[str, Tensor]] = None) -> Tuple[Tensor, Optional[Dict[str, Tensor]]]:
         if torch.rand(1) < self.p:
-            print("[DEBUG] Applying Horizontal Flip")  # Debugging
             image = F.hflip(image)
             if target is not None:
                 _, _, width = F.get_dimensions(image)
                 target["boxes"][:, [0, 2]] = width - target["boxes"][:, [2, 0]]
-                print(f"[DEBUG] Updated Bounding Boxes: {target['boxes']}")
                 if "masks" in target:
                     target["masks"] = target["masks"].flip(-1)
                 if "keypoints" in target:
