@@ -60,11 +60,12 @@ class CustomBackboneWithFPN(nn.Module):
     Custom backbone model integrated with a Feature Pyramid Network (FPN) for multi-scale feature extraction
     using custom forward hooks to extract features from nested layers.
     """
-    def __init__(self, backbone: nn.Module, layer_names: list, out_channels: int = 256):
+    def __init__(self, backbone: nn.Module, layer_names: list, out_channels: int = 256, align_size=(128, 128)):
         super(CustomBackboneWithFPN, self).__init__()
         self.backbone = backbone
         self.feature_outputs = {}
         self.layer_names = layer_names
+        self.align_size = align_size  # Target size for alignment
 
         # Register hooks for the specified layers
         for name, layer in self.backbone.named_modules():
@@ -77,7 +78,7 @@ class CustomBackboneWithFPN(nn.Module):
             out_channels=out_channels,
             extra_blocks=CustomLastLevelMaxPool()  # Use the custom pooling class
         )
-    
+
     def _hook_fn(self, name):
         def hook(module, input, output):
             # Save the output of the layer to the feature outputs dictionary
@@ -86,13 +87,11 @@ class CustomBackboneWithFPN(nn.Module):
 
     def forward(self, x, targets=None):
         """
-        Forward method modified to accept targets for compatibility with object detection models.
+        Forward method modified to align feature maps to the same spatial dimensions.
         """
         # Ensure x is a Tensor before passing it through the backbone
         if isinstance(x, list):
-            # Convert the list of Tensors to a batch Tensor
             x = torch.stack(x).to(next(self.backbone.parameters()).device)
-
         if not isinstance(x, torch.Tensor):
             raise TypeError(f"Expected input to be a Tensor, but got {type(x)}")
 
@@ -104,35 +103,22 @@ class CustomBackboneWithFPN(nn.Module):
 
         # Collect the feature outputs in the correct order
         features = [self.feature_outputs[name] for name in self.layer_names]
+        feature_dict = {str(i): feature for i, feature in enumerate(features)}
 
-        # Debugging: Print shapes of extracted features
-        for i, feature in enumerate(features):
-            print(f"[DEBUG] Feature {i} ({self.layer_names[i]}): shape {feature.shape}")
-
-        # Align spatial dimensions of feature maps
-        # Use the spatial size of the smallest feature map as the target size
-        target_size = features[-1].shape[-2:]  # Assuming the last feature map is the smallest
-        aligned_features = [
-            F.interpolate(feat, size=target_size, mode="nearest") for feat in features
-        ]
-
-        # Create a dictionary to pass to the FPN
-        feature_dict = {str(i): feature for i, feature in enumerate(aligned_features)}
-
-        # Pass the aligned features through the FPN
+        # Pass the features through the FPN
         fpn_output = self.fpn(feature_dict)
 
-        # Ensure the output is a Tensor
-        if not all(isinstance(feature, torch.Tensor) for feature in aligned_features):
-            raise TypeError("One or more aligned feature outputs are not Tensors")
+        # Align feature maps to the same size, if specified
+        aligned_features = {
+            key: F.interpolate(value, size=self.align_size, mode='bilinear', align_corners=False)
+            for key, value in fpn_output.items()
+        }
 
-        # Return fpn_output and targets if provided (for compatibility with detection models)
         if self.training and targets is not None:
-            return fpn_output, targets
+            return aligned_features, targets
 
-        return fpn_output
+        return aligned_features
 
-    
 if __name__ == "__main__":
     # Initialize the EfficientNet-B0 backbone with pretrained weights
     backbone = get_efficientnet_backbone(pretrained=True)
@@ -146,9 +132,11 @@ if __name__ == "__main__":
     ]
 
     # Create an instance of the CustomBackboneWithFPN using EfficientNet-B0
-    model = CustomBackboneWithFPN(backbone, layer_names=layer_names, out_channels=256)
+    model = CustomBackboneWithFPN(backbone, layer_names=layer_names, out_channels=256, align_size=(128, 128))
 
     # Test with a sample tensor to ensure correct output shapes
     x = torch.rand(1, 3, 256, 256)  # Adjust the input size as needed
     output = model(x)
-    print([(k, v.shape) for k, v in output.items()])
+    print("Aligned Feature Pyramid Network Output:")
+    for key, value in output.items():
+        print(f"Key: {key}, Shape: {value.shape}")
