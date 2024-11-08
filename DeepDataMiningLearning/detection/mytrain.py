@@ -14,7 +14,7 @@ from DeepDataMiningLearning.detection.dataset import get_dataset
 from DeepDataMiningLearning.detection.myevaluator import simplemodelevaluate, modelevaluate
 
 # Import your custom backbone
-from DeepDataMiningLearning.hw1.backbone import get_efficientnet_backbone, CustomBackboneWithFPN
+from hw1.backbone import get_efficientnet_backbone, CustomBackboneWithFPN
 
 try:
     from torchinfo import summary
