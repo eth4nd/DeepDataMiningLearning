@@ -227,6 +227,10 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq, sc
             else:
                 loss_dict = output
 
+            # Debugging: Print the loss dictionary
+            print(f"Loss dictionary keys: {loss_dict.keys()}")
+            print(f"Loss dictionary values: {loss_dict}")
+
             # Calculate total loss
             losses = sum(loss for loss in loss_dict.values())
 
