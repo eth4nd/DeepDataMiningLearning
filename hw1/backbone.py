@@ -61,7 +61,8 @@ class CustomBackboneWithFPN(nn.Module):
     using custom forward hooks to extract features from nested layers.
     """
     def __init__(self, backbone: nn.Module, layer_names: list, out_channels: int = 256, align_size=(128, 128)):
-        super(CustomBackboneWithFPN, self).__init__()
+        # Use the modern super() syntax
+        super().__init__()
         self.backbone = backbone
         self.feature_outputs = {}
         self.layer_names = layer_names
