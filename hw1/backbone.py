@@ -109,15 +109,22 @@ class CustomBackboneWithFPN(nn.Module):
         for i, feature in enumerate(features):
             print(f"[DEBUG] Feature {i} ({self.layer_names[i]}): shape {feature.shape}")
 
-        # Create a dictionary to pass to the FPN
-        feature_dict = {str(i): feature for i, feature in enumerate(features)}
+        # Align spatial dimensions of feature maps
+        # Use the spatial size of the smallest feature map as the target size
+        target_size = features[-1].shape[-2:]  # Assuming the last feature map is the smallest
+        aligned_features = [
+            F.interpolate(feat, size=target_size, mode="nearest") for feat in features
+        ]
 
-        # Pass the features through the FPN
+        # Create a dictionary to pass to the FPN
+        feature_dict = {str(i): feature for i, feature in enumerate(aligned_features)}
+
+        # Pass the aligned features through the FPN
         fpn_output = self.fpn(feature_dict)
 
         # Ensure the output is a Tensor
-        if not all(isinstance(feature, torch.Tensor) for feature in features):
-            raise TypeError("One or more feature outputs are not Tensors")
+        if not all(isinstance(feature, torch.Tensor) for feature in aligned_features):
+            raise TypeError("One or more aligned feature outputs are not Tensors")
 
         # Return fpn_output and targets if provided (for compatibility with detection models)
         if self.training and targets is not None:
