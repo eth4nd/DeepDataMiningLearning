@@ -127,7 +127,12 @@ def main(args):
     print("Creating model")
     backbone = get_efficientnet_backbone(pretrained=True)
     layer_names = ["0.1.0.block", "0.2.1.block", "0.4.2.block", "0.6.3.block"]
-    model = CustomBackboneWithFPN(backbone, layer_names, out_channels=256).to(device)
+    model = CustomBackboneWithFPN(
+        backbone,
+        layer_names=layer_names,
+        out_channels=256,
+        align_size=(128, 128)  # Ensure this matches
+    ).to(device)
 
     optimizer = torch.optim.SGD(
         model.parameters(),

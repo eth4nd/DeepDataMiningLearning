@@ -62,7 +62,7 @@ class CustomBackboneWithFPN(nn.Module):
     """
     def __init__(self, backbone: nn.Module, layer_names: list, out_channels: int = 256, align_size=(128, 128)):
         # Explicitly call the parent class constructor
-        super(CustomBackboneWithFPN, self).__init__()
+        super().__init__()
         self.backbone = backbone
         self.feature_outputs = {}
         self.layer_names = layer_names
