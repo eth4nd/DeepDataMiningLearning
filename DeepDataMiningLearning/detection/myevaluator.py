@@ -70,30 +70,29 @@ class CocoEvaluator:
             return self.prepare_for_coco_keypoint(predictions)
         raise ValueError(f"Unknown iou type {iou_type}")
 
-    def prepare_for_coco_detection(self, predictions):
+    def prepare_for_coco_detection(self, predictions): #predictions, key=image_id, val=dict
         coco_results = []
         for original_id, prediction in predictions.items():
-            if not prediction or "boxes" not in prediction:
-                print(f"[WARNING] No predictions for image_id {original_id}")
+            if len(prediction) == 0:
                 continue
 
-            boxes = prediction["boxes"] if "boxes" in prediction else []
+            boxes = prediction["boxes"] #10,4
             boxes = utils.convert_to_xywh(boxes).tolist()
-            scores = prediction.get("scores", []).tolist()
-            labels = prediction.get("labels", []).tolist()
+            scores = prediction["scores"].tolist() #list of 10
+            labels = prediction["labels"].tolist()
 
-            for k, box in enumerate(boxes):
-                if k >= len(scores) or k >= len(labels):
-                    continue
-                coco_results.append(
+            coco_results.extend(
+                [
                     {
                         "image_id": original_id,
                         "category_id": labels[k],
                         "bbox": box,
                         "score": scores[k],
                     }
-                )
-        return coco_results
+                    for k, box in enumerate(boxes)
+                ]
+            )
+        return coco_results #create a list of 10 dicts, each with "image_id", and one box (4)
 
     def prepare_for_coco_segmentation(self, predictions):
         coco_results = []
@@ -194,14 +193,15 @@ def evaluate(imgs):
 
 
 def get_coco_api_from_dataset(dataset):
-    try:
-        # Check if the dataset already has a COCO-like structure
-        if hasattr(dataset, "coco"):
-            return dataset.coco
-        # Otherwise, convert it
-        return convert_to_coco_api(dataset)
-    except Exception as e:
-        raise ValueError(f"Error converting dataset to COCO format: {e}")
+    # FIXME: This is... awful?
+    # for _ in range(10):
+    #     if isinstance(dataset, torchvision.datasets.CocoDetection):
+    #         break
+    #     if isinstance(dataset, torch.utils.data.Subset):
+    #         dataset = dataset.dataset
+    # if isinstance(dataset, torchvision.datasets.CocoDetection):
+    #     return dataset.coco
+     return convert_to_coco_api(dataset)
 
 def convert_to_coco_api2(ds):#mykittidetectiondataset
     coco_ds = COCO()
@@ -259,93 +259,97 @@ def convert_to_coco_api2(ds):#mykittidetectiondataset
     coco_ds.createIndex()
     return coco_ds
 
-def convert_to_coco_api(ds):
+def convert_to_coco_api(ds):#mykittidetectiondataset
     coco_ds = COCO()
+    # annotation IDs need to start at 1, not 0, see torchvision issue #1530
     ann_id = 1
     dataset = {"images": [], "categories": [], "annotations": []}
     categories = set()
-    ds_len = len(ds)
-
+    ds_len=len(ds)
     print("convert to coco api:")
     progress_bar = tqdm(range(ds_len))
-
     for img_idx in range(ds_len):
-        # Fetch image and target
-        img, targets = ds[img_idx]
-
-        if not targets or "image_id" not in targets:
-            print(f"[WARNING] Skipping image {img_idx} as it has no valid target.")
-            continue
-
-        image_id = targets["image_id"]
-        img_dict = {
-            "id": image_id,
-            "height": img.shape[-2],  # Assuming CHW format
-            "width": img.shape[-1],
-        }
+        # find better way to get target
+        # targets = ds.get_annotations(img_idx)
+        img, targets = ds[img_idx] #img is [3, 1280, 1920], 
+        image_id = targets["image_id"] #68400
+        img_dict = {}
+        img_dict["id"] = image_id
+        img_dict["height"] = img.shape[-2] #img is CHW
+        img_dict["width"] = img.shape[-1]
         dataset["images"].append(img_dict)
-
-        # Handle bounding boxes
-        if "boxes" in targets and len(targets["boxes"]) > 0:
-            bboxes = targets["boxes"].clone()
-            bboxes[:, 2:] -= bboxes[:, :2]  # Convert [xmin, ymin, xmax, ymax] -> [xmin, ymin, width, height]
-            bboxes = bboxes.tolist()
-            labels = targets["labels"].tolist()
-            areas = targets["area"].tolist()
-            iscrowd = targets["iscrowd"].tolist()
-
-            # Process each object in the image
-            for i in range(len(bboxes)):
-                ann = {
-                    "image_id": image_id,
-                    "bbox": bboxes[i],
-                    "category_id": labels[i],
-                    "area": areas[i],
-                    "iscrowd": iscrowd[i],
-                    "id": ann_id,
-                }
-                dataset["annotations"].append(ann)
-                categories.add(labels[i])
-                ann_id += 1
-        else:
-            print(f"[WARNING] No bounding boxes found for image {img_idx}")
-
+        bboxes = targets["boxes"].clone() #torch.Size([23, 4])
+        bboxes[:, 2:] -= bboxes[:, :2] #[xmin, ymin, xmax, ymax] in torch to [xmin, ymin, width, height] in COCO
+        bboxes = bboxes.tolist() #23 list of [536.0, 623.0, 51.0, 18.0]
+        labels = targets["labels"].tolist() #torch.Size([23]) -> list 23 [1,1,1]
+        areas = targets["area"].tolist() #torch.Size([23]) -> list 23 []
+        iscrowd = targets["iscrowd"].tolist() #torch.Size([23]) -> list
+        if "masks" in targets:
+            masks = targets["masks"]
+            # make masks Fortran contiguous for coco_mask
+            masks = masks.permute(0, 2, 1).contiguous().permute(0, 2, 1)
+        if "keypoints" in targets:
+            keypoints = targets["keypoints"]
+            keypoints = keypoints.reshape(keypoints.shape[0], -1).tolist()
+        num_objs = len(bboxes)
+        for i in range(num_objs):
+            ann = {}
+            ann["image_id"] = image_id
+            ann["bbox"] = bboxes[i]
+            ann["category_id"] = labels[i] #int
+            categories.add(labels[i])
+            ann["area"] = areas[i]
+            ann["iscrowd"] = iscrowd[i]
+            ann["id"] = ann_id
+            if "masks" in targets:
+                ann["segmentation"] = coco_mask.encode(masks[i].numpy())
+            if "keypoints" in targets:
+                ann["keypoints"] = keypoints[i]
+                ann["num_keypoints"] = sum(k != 0 for k in keypoints[i][2::3])
+            dataset["annotations"].append(ann)
+            ann_id += 1
         progress_bar.update(1)
-
-    # Add categories
     dataset["categories"] = [{"id": i} for i in sorted(categories)]
+    #print("convert_to_coco_api",dataset["categories"])
     coco_ds.dataset = dataset
     coco_ds.createIndex()
-
     return coco_ds
     
 def simplemodelevaluate(model, data_loader, device):
+
     cpu_device = torch.device("cpu")
     model.eval()
 
-    # Convert dataset to COCO format
-    coco = get_coco_api_from_dataset(data_loader.dataset)
-    iou_types = ["bbox"]
+    coco = get_coco_api_from_dataset(data_loader.dataset) #go through the whole dataset, convert_to_coco_api
+    #coco = convert_to_coco_api(data_loader.dataset)
+    iou_types = ["bbox"] #_get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
-    for images, targets in tqdm(data_loader, desc="Evaluating"):
-        images = [img.to(device) for img in images]
-        outputs = model(images)
+    evalprogress_bar = tqdm(range(len(data_loader)))
 
-        if not outputs or len(outputs) == 0:
-            print("[WARNING] No outputs generated for batch.")
-            continue
+    for images, targets in data_loader: #images, targets are a tuple (tensor, )
+        images = list(img.to(device) for img in images) #list of torch.Size([3, 426, 640]), len=1
+        #targets: len=1 dict (image_id=139), boxes[20,4], labels[20]
+        model_time = time.time()
+        outputs = model(images) #len1 list of dict boxes tensor (10x4), labels tensor[10], scores
 
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-        res = {target["image_id"]: output for target, output in zip(targets, outputs) if target}
+        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs] #len1 list of dicts with tensors
+        model_time = time.time() - model_time
 
-        if res:
-            coco_evaluator.update(res)
-        else:
-            print("[WARNING] Skipping batch due to missing targets or outputs.")
+        res = {target["image_id"]: output for target, output in zip(targets, outputs)} #dict, key=139, val=dict[boxes] 10,4
+        #print("res:", res)
+        evaluator_time = time.time()
+        coco_evaluator.update(res)
+        evaluator_time = time.time() - evaluator_time
+        evalprogress_bar.update(1)
 
+    # gather the stats from all processes
+    #coco_evaluator.synchronize_between_processes()
+
+    # accumulate predictions from all images
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
+    #torch.set_num_threads(n_threads)
     return coco_evaluator
 
 @torch.inference_mode()
