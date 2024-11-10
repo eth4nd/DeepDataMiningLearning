@@ -410,9 +410,20 @@ def modelevaluate(model, data_loader, device):
 
         # Process the outputs for COCO evaluation
         try:
-            outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+            if isinstance(outputs, dict):
+                # If outputs is a dict, convert all tensors to CPU
+                outputs = {k: v.to(cpu_device) for k, v in outputs.items()}
+            elif isinstance(outputs, list):
+                # If outputs is a list of dicts, process each dict
+                outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+            else:
+                raise TypeError(f"Unsupported outputs format: {type(outputs)}")
         except AttributeError as e:
             print(f"Error during outputs processing: {e}")
+            print(f"Outputs received: {outputs}")
+            raise
+        except TypeError as e:
+            print(f"Error during outputs type checking: {e}")
             print(f"Outputs received: {outputs}")
             raise
 
