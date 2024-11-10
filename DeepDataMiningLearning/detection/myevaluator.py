@@ -259,58 +259,79 @@ def convert_to_coco_api2(ds):#mykittidetectiondataset
     coco_ds.createIndex()
     return coco_ds
 
-def convert_to_coco_api(ds):#mykittidetectiondataset
+def convert_to_coco_api(ds):  # mykittidetectiondataset
     coco_ds = COCO()
     # annotation IDs need to start at 1, not 0, see torchvision issue #1530
     ann_id = 1
     dataset = {"images": [], "categories": [], "annotations": []}
     categories = set()
-    ds_len=len(ds)
+    ds_len = len(ds)
     print("convert to coco api:")
     progress_bar = tqdm(range(ds_len))
+
     for img_idx in range(ds_len):
-        # find better way to get target
-        # targets = ds.get_annotations(img_idx)
-        img, targets = ds[img_idx] #img is [3, 1280, 1920], 
-        image_id = targets["image_id"] #68400
-        img_dict = {}
-        img_dict["id"] = image_id
-        img_dict["height"] = img.shape[-2] #img is CHW
-        img_dict["width"] = img.shape[-1]
+        img, targets = ds[img_idx]
+
+        # Validation checks to skip problematic samples
+        if targets is None:
+            print(f"Skipping sample {img_idx}: targets are None.")
+            continue
+        if "image_id" not in targets:
+            print(f"Sample {img_idx} missing 'image_id': {targets}")
+            continue
+        if "boxes" not in targets or targets["boxes"].shape[0] == 0:
+            print(f"Sample {img_idx} has no bounding boxes: {targets}")
+            continue
+
+        image_id = targets["image_id"]
+        img_dict = {
+            "id": image_id,
+            "height": img.shape[0],  # Assuming img is in HWC format after your updates
+            "width": img.shape[1],
+        }
         dataset["images"].append(img_dict)
-        bboxes = targets["boxes"].clone() #torch.Size([23, 4])
-        bboxes[:, 2:] -= bboxes[:, :2] #[xmin, ymin, xmax, ymax] in torch to [xmin, ymin, width, height] in COCO
-        bboxes = bboxes.tolist() #23 list of [536.0, 623.0, 51.0, 18.0]
-        labels = targets["labels"].tolist() #torch.Size([23]) -> list 23 [1,1,1]
-        areas = targets["area"].tolist() #torch.Size([23]) -> list 23 []
-        iscrowd = targets["iscrowd"].tolist() #torch.Size([23]) -> list
+
+        bboxes = targets["boxes"].clone()
+        bboxes[:, 2:] -= bboxes[:, :2]  # [xmin, ymin, xmax, ymax] -> [xmin, ymin, width, height]
+        bboxes = bboxes.tolist()
+
+        labels = targets["labels"].tolist()
+        areas = targets["area"].tolist()
+        iscrowd = targets["iscrowd"].tolist()
+
         if "masks" in targets:
             masks = targets["masks"]
-            # make masks Fortran contiguous for coco_mask
+            # Make masks Fortran contiguous for coco_mask
             masks = masks.permute(0, 2, 1).contiguous().permute(0, 2, 1)
+
         if "keypoints" in targets:
             keypoints = targets["keypoints"]
             keypoints = keypoints.reshape(keypoints.shape[0], -1).tolist()
+
         num_objs = len(bboxes)
         for i in range(num_objs):
-            ann = {}
-            ann["image_id"] = image_id
-            ann["bbox"] = bboxes[i]
-            ann["category_id"] = labels[i] #int
+            ann = {
+                "image_id": image_id,
+                "bbox": bboxes[i],
+                "category_id": labels[i],  # int
+                "area": areas[i],
+                "iscrowd": iscrowd[i],
+                "id": ann_id,
+            }
             categories.add(labels[i])
-            ann["area"] = areas[i]
-            ann["iscrowd"] = iscrowd[i]
-            ann["id"] = ann_id
+
             if "masks" in targets:
                 ann["segmentation"] = coco_mask.encode(masks[i].numpy())
             if "keypoints" in targets:
                 ann["keypoints"] = keypoints[i]
                 ann["num_keypoints"] = sum(k != 0 for k in keypoints[i][2::3])
+
             dataset["annotations"].append(ann)
             ann_id += 1
+
         progress_bar.update(1)
+
     dataset["categories"] = [{"id": i} for i in sorted(categories)]
-    #print("convert_to_coco_api",dataset["categories"])
     coco_ds.dataset = dataset
     coco_ds.createIndex()
     return coco_ds
