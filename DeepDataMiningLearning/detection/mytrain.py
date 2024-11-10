@@ -91,15 +91,8 @@ def main(args):
 
         transform_train = get_transformsimple(is_train=True)
         transform_val = get_transformsimple(is_train=False)
-
-        # Update paths for train and validation subsets
-        train_subset_path = os.path.join(args.data_path, 'train_subset')
-        val_subset_path = os.path.join(args.data_path, 'val_subset')
-
-        # Initialize dataset and dataset_test with respective paths
-        dataset = KittiDataset(root=train_subset_path, train=True, split='train', transform=transform_train)
-        dataset_test = KittiDataset(root=val_subset_path, train=False, split='val', transform=transform_val)
-        
+        dataset = KittiDataset(root=args.data_path, train=True, split='train', transform=transform_train)
+        dataset_test = KittiDataset(root=args.data_path, train=False, split='val', transform=transform_val)
         num_classes = dataset.numclass
     else:
         # Use get_dataset for other datasets
