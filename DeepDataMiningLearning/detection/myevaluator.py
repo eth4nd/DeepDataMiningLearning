@@ -399,6 +399,10 @@ def modelevaluate(model, data_loader, device):
         model_time = time.time()
         outputs = model(images)
 
+        # Debug: Check the format and type of the model output
+        print(f"Model outputs type: {type(outputs)}")
+        print(f"Model outputs: {outputs}")
+
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
