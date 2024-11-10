@@ -209,7 +209,7 @@ class KittiDataset(torch.utils.data.Dataset):
             raise ValueError(f"[ERROR] Image at index {index} with ID {imageidx} could not be loaded.")
 
         # Get the target if in training mode or if in validation mode
-        if self.train or (not self.train and self.split == 'val'):
+        if self.train or (self._location == "val_subset"):
             target = self.get_label(imageidx)
             if target is None or len(target) == 0:
                 raise ValueError(f"[ERROR] No target data found for image ID {imageidx}. Check label file.")
