@@ -354,6 +354,10 @@ def simplemodelevaluate(model, data_loader, device):
         model_time = time.time()
         outputs = model(images) #len1 list of dict boxes tensor (10x4), labels tensor[10], scores
 
+        # Debug: Check the format and type of the model output
+        print(f"Model outputs type: {type(outputs)}")
+        print(f"Model outputs: {outputs}")
+
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs] #len1 list of dicts with tensors
         model_time = time.time() - model_time
 
