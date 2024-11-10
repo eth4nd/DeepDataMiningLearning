@@ -50,7 +50,7 @@ class KittiDataset(torch.utils.data.Dataset):
         self.root = root
         self.train = train
         self.transform = transform
-        self._location = "training" if self.train else "testing"
+        self._location = "trai_subset" if self.train else "val_subset"
         self.image_dir_name = image_dir
         self.labels_dir_name = labels_dir
 
