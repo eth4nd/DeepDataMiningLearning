@@ -121,6 +121,7 @@ class KittiDataset(torch.utils.data.Dataset):
     
     def get_label(self, idx):
         label_file = Path(self.root_split_path) / self.labels_dir_name / f"{idx}.txt"
+        print(f"Checking label path: {label_file}")
         if not label_file.exists():
             return []  # Return an empty list if no labels found
         
