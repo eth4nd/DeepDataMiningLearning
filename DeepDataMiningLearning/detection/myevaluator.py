@@ -392,33 +392,44 @@ def modelevaluate(model, data_loader, device):
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
     for images, targets in metric_logger.log_every(data_loader, 100, header):
+        # Move images to the device
         images = list(img.to(device) for img in images)
 
         if torch.cuda.is_available():
             torch.cuda.synchronize()
         model_time = time.time()
+
+        # Get the model outputs
         outputs = model(images)
 
-        # Debug: Check the format and type of the model output
+        # Debug: Check the input and output formats
+        print(f"Images type: {type(images)}, Images shape: {[img.shape for img in images]}")
+        print(f"Targets: {targets}")
         print(f"Model outputs type: {type(outputs)}")
         print(f"Model outputs: {outputs}")
 
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+        # Process the outputs for COCO evaluation
+        try:
+            outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+        except AttributeError as e:
+            print(f"Error during outputs processing: {e}")
+            print(f"Outputs received: {outputs}")
+            raise
+
         model_time = time.time() - model_time
 
         res = {target["image_id"]: output for target, output in zip(targets, outputs)}
-        #print("res:", res)
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time
         metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
 
-    # gather the stats from all processes
+    # Gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
     coco_evaluator.synchronize_between_processes()
 
-    # accumulate predictions from all images
+    # Accumulate predictions from all images
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
     torch.set_num_threads(n_threads)
