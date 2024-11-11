@@ -379,6 +379,9 @@ def simplemodelevaluate(model, data_loader, device):
 
 @torch.inference_mode()
 def modelevaluate(model, data_loader, device):
+    import numpy as np
+    from torchvision.ops import box_convert
+    
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -390,6 +393,29 @@ def modelevaluate(model, data_loader, device):
     coco = get_coco_api_from_dataset(data_loader.dataset)
     iou_types = utils._get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
+
+    def decode_outputs(outputs):
+        """
+        Decodes raw model outputs into COCO-compatible format.
+        This assumes that the model outputs include feature maps with confidence scores,
+        class labels, and bounding box coordinates.
+        """
+        decoded_outputs = []
+        for output in outputs:
+            # Placeholder: Modify this based on your model's output structure
+            boxes = output['boxes']  # Replace with correct tensor from model output
+            scores = output['scores']  # Replace with correct tensor from model output
+            labels = output['labels']  # Replace with correct tensor from model output
+
+            # Ensure boxes are in the correct format for COCO (x_min, y_min, width, height)
+            boxes_coco_format = box_convert(boxes, in_fmt="xyxy", out_fmt="xywh")
+
+            decoded_outputs.append({
+                "boxes": boxes_coco_format.to(cpu_device).numpy(),
+                "scores": scores.to(cpu_device).numpy(),
+                "labels": labels.to(cpu_device).numpy(),
+            })
+        return decoded_outputs
 
     for images, targets in metric_logger.log_every(data_loader, 100, header):
         # Move images to the device
@@ -408,28 +434,26 @@ def modelevaluate(model, data_loader, device):
         print(f"Model outputs type: {type(outputs)}")
         print(f"Model outputs: {outputs}")
 
-        # Process the outputs for COCO evaluation
+        # Process and decode the outputs
         try:
-            if isinstance(outputs, dict):
-                # If outputs is a dict, convert all tensors to CPU
-                outputs = {k: v.to(cpu_device) for k, v in outputs.items()}
-            elif isinstance(outputs, list):
-                # If outputs is a list of dicts, process each dict
-                outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-            else:
-                raise TypeError(f"Unsupported outputs format: {type(outputs)}")
-        except AttributeError as e:
-            print(f"Error during outputs processing: {e}")
-            print(f"Outputs received: {outputs}")
+            decoded_outputs = decode_outputs(outputs)
+        except Exception as e:
+            print(f"Error during decoding outputs: {e}")
+            print(f"Raw outputs received: {outputs}")
             raise
-        except TypeError as e:
-            print(f"Error during outputs type checking: {e}")
-            print(f"Outputs received: {outputs}")
-            raise
+
+        # Map decoded outputs to COCO evaluation format
+        res = {}
+        for target, output in zip(targets, decoded_outputs):
+            image_id = target["image_id"].item() if isinstance(target["image_id"], torch.Tensor) else target["image_id"]
+            res[image_id] = {
+                "boxes": output["boxes"],
+                "scores": output["scores"],
+                "labels": output["labels"]
+            }
 
         model_time = time.time() - model_time
 
-        res = {target["image_id"]: output for target, output in zip(targets, outputs)}
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time
