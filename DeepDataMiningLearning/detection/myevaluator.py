@@ -412,9 +412,11 @@ def modelevaluate(model, data_loader, device):
         try:
             outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         except AttributeError as e:
+            # Print error details and outputs
             print(f"Error during outputs processing: {e}")
             print(f"Outputs received: {outputs}")
-            raise
+            print("Exiting modelevaluate() due to processing error.")
+            return
 
         model_time = time.time() - model_time
 
